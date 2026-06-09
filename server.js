@@ -63,7 +63,6 @@ app.get('/api/download', (req, res) => {
 
     const type = downloadType || 'video';
     
-    // Explicitly bypass Node-layer standard request timeouts
     req.setTimeout(0);
     res.setTimeout(0); 
 
@@ -72,7 +71,7 @@ app.get('/api/download', (req, res) => {
         cleanTitle = title.replace(/[^a-zA-Z0-9 \-_]/g, '').replace(/\s+/g, '_');
     }
 
-    // Force Chunked Transfer Encoding to tell Render's Proxy to keep the socket alive
+    // Force Chunked Transfer Encoding to keep Render gateway alive
     res.writeHead(200, {
         'Content-Type': type === 'audio' ? 'audio/m4a' : 'video/mp4',
         'Content-Disposition': `attachment; filename="${cleanTitle}.${type === 'audio' ? 'm4a' : 'mp4'}"`,
@@ -81,15 +80,13 @@ app.get('/api/download', (req, res) => {
         'X-Content-Type-Options': 'nosniff'
     });
 
-    // Keep-alive heartbeat: forces empty buffers to clear Render gateway 30s limit
+    // Heartbeat: Sends data every 15 seconds to prevent Render's 30s timeout
     const heartbeatInterval = setInterval(() => {
         if (!res.writableEnded) {
             res.write(''); 
         }
     }, 15000);
 
-    // Optimized flags: we fetch pre-merged single files ('b') when possible 
-    // to bypass Render's tiny RAM limits crashing during ffmpeg muxing.
     let args = [
         '--http-chunk-size', '5M',       
         '--concurrent-fragments', '3',    
@@ -100,7 +97,7 @@ app.get('/api/download', (req, res) => {
     if (type === 'audio') {
         args.push('-f', 'ba[ext=m4a]/ba');
     } else {
-        // Fallback directly to pre-merged mp4 containers to bypass server-side CPU hangs
+        // Fallback to pre-merged mp4 to protect free server RAM from crashing
         args.push('-f', 'b[ext=mp4]/bv*[vcodec^=avc]+ba[ext=m4a]/b'); 
     }
     
@@ -109,7 +106,6 @@ app.get('/api/download', (req, res) => {
     console.log(`[VeloFetch Engine] Safe stream running: ${ytdlpCmd}`);
     const ytDlpProcess = spawn(ytdlpCmd, args);
 
-    // Dynamic pipe handling with auto-flushing mechanisms
     ytDlpProcess.stdout.on('data', (chunk) => {
         if (!res.writableEnded) {
             res.write(chunk);
