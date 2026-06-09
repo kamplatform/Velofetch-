@@ -51,7 +51,7 @@ app.post('/api/info', (req, res) => {
         if (code === 0 && stdoutData.trim()) {
             const lines = stdoutData.trim().split('\n');
             
-            // Fixed: Safely check individual lines inside the array to prevent crashes
+            // ⚡ FIXED: Correctly reference the individual strings inside the array
             if (lines[0]) {
                 titleText = lines[0].trim();
             }
