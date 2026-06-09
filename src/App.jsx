@@ -43,26 +43,40 @@ function App() {
     setFileSize('Calculating media size metrics...');
     setMessage(`Connecting to secure stream channels...`);
 
+    // Default title fallback if backend API check fails
+    let targetTitle = "VeloFetch_Media";
+
     try {
-      // 1. Fetch file size details AND video title via production proxied routing path
+      // 1. Fetch file size details AND video title safely
       const infoResponse = await fetch('/api/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
-      const infoData = await infoResponse.json();
-      
-      if (infoData.sizeText) setFileSize(`Download size: ${infoData.sizeText}`);
-      
-      // Extract the real video title from the server response (fallback if missing)
-      const targetTitle = infoData.videoTitle || "VeloFetch_Media";
 
+      if (infoResponse.ok) {
+        const infoData = await infoResponse.json();
+        if (infoData && infoData.sizeText) {
+          setFileSize(`Download size: ${infoData.sizeText}`);
+        }
+        if (infoData && infoData.videoTitle) {
+          targetTitle = infoData.videoTitle;
+        }
+      } else {
+        setFileSize('Size calculation offline');
+      }
+    } catch (infoErr) {
+      console.warn("Backend metadata lookup timed out. Defaulting to direct streaming pipe...");
+      setFileSize('Size calculation offline');
+    }
+
+    // 2. Execute Stream Injection regardless of metadata results
+    try {
       setMessage(`Movie link validated! Passing data stream directly to your phone...`);
       
-      // 2. ⚡ FIXED: Append the verified & encoded dynamic title parameter to the streamUrl string
       const streamUrl = `/api/download?url=${encodeURIComponent(url)}&downloadType=${downloadType}&title=${encodeURIComponent(targetTitle)}`;
       
-      // Open the streaming route safely
+      // Open the streaming route safely to trigger native browser downloading
       window.location.href = streamUrl;
 
       setProgress(100);
@@ -70,7 +84,7 @@ function App() {
       setUrl('');
       
     } catch (err) {
-      setMessage('Network error processing large media files.');
+      setMessage('Failed to initiate direct streaming engine. Please reload page.');
     } finally {
       setLoading(false);
     }
@@ -132,7 +146,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
