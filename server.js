@@ -13,20 +13,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Smart Path Finder: Detects Vite's 'dist' folder or falls back to 'public'
+const staticPath = fs.existsSync(path.join(__dirname, 'dist')) 
+    ? path.join(__dirname, 'dist') 
+    : path.join(__dirname, 'public');
+
+app.use(express.static(staticPath));
 
 const localBinaryPath = path.join(__dirname, 'bin', 'yt-dlp');
 const ytdlpCmd = fs.existsSync(localBinaryPath) ? localBinaryPath : 'yt-dlp';
 
-// ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
+// ENDPOINT 1: Video Info Processing
 app.post('/api/info', (req, res) => {
     let { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
-    // Automatically strips off accidental commas or white spaces from mobile inputs
     url = url.trim().replace(/,$/, '');
 
-    // Fetches title, filesize, and filesize_approx in one fast operation
     const infoProcess = spawn(ytdlpCmd, [
         '--print', 'title', 
         '--print', 'filesize,filesize_approx', 
@@ -51,12 +55,12 @@ app.post('/api/info', (req, res) => {
         if (code === 0 && stdoutData.trim()) {
             const lines = stdoutData.trim().split('\n');
             
-            // ⚡ FIXED: Correctly reference the individual strings inside the array
-            if (lines[0]) {
+            // Fixed: Explicitly look at index 0 and index 1 strings inside the array
+            if (lines && lines[0]) {
                 titleText = lines[0].trim();
             }
 
-            if (lines[1]) {
+            if (lines && lines[1]) {
                 const sizes = lines[1].trim().split(/[\s,]+/);
                 const sizeInBytes = parseInt(sizes[0]) || parseInt(sizes[1]) || 0;
                 
@@ -67,7 +71,7 @@ app.post('/api/info', (req, res) => {
                 }
             }
         } else {
-            return res.status(400).json({ error: 'Could not fetch video info. Make sure the link is valid and public.' });
+            return res.status(400).json({ error: 'Could not fetch video info. Link may be private or invalid.' });
         }
 
         return res.json({ videoTitle: titleText, sizeText: sizeText });
@@ -79,21 +83,17 @@ app.get('/api/download', (req, res) => {
     let { url, downloadType, title } = req.query; 
     if (!url) return res.status(400).json({ error: 'Please provide a valid URL' });
 
-    // Cleans up the download parameters too
     url = url.trim().replace(/,$/, '');
-
     const type = downloadType || 'video';
     
     req.setTimeout(0);
     res.setTimeout(0); 
 
-    // Sanitize the text string to keep it mobile filesystem safe
     let cleanTitle = 'VeloFetch_Media';
     if (title) {
         cleanTitle = title.replace(/[^a-zA-Z0-9 \-_]/g, '').replace(/\s+/g, '_');
     }
 
-    // Set high-compatibility media streaming headers with the dynamic filename
     if (type === 'audio') {
         res.setHeader('Content-Type', 'audio/m4a');
         res.setHeader('Content-Disposition', `attachment; filename="${cleanTitle}.m4a"`);
@@ -128,10 +128,6 @@ app.get('/api/download', (req, res) => {
 
     ytDlpProcess.stdout.pipe(res);
 
-    ytDlpProcess.stderr.on('data', (data) => {
-        console.error(`[Engine Error log]: ${data.toString().trim()}`);
-    });
-
     res.on('close', () => {
         if (!ytDlpProcess.killed) {
             ytDlpProcess.kill('SIGKILL');
@@ -143,8 +139,12 @@ app.get('/api/download', (req, res) => {
     });
 });
 
+// Wildcard route to handle React Router or static asset delivery safely
 app.use((req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    const indexPath = fs.existsSync(path.join(staticPath, 'index.html'))
+        ? path.join(staticPath, 'index.html')
+        : path.join(__dirname, 'public', 'index.html');
+    res.sendFile(indexPath);
 });
 
 const PORT = process.env.PORT || 5000;
