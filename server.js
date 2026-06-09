@@ -13,24 +13,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Smart Path Finder: Detects Vite's 'dist' folder or falls back to 'public'
-const staticPath = fs.existsSync(path.join(__dirname, 'dist')) 
-    ? path.join(__dirname, 'dist') 
-    : path.join(__dirname, 'public');
-
-app.use(express.static(staticPath));
+app.use(express.static(path.join(__dirname, 'public')));
 
 const localBinaryPath = path.join(__dirname, 'bin', 'yt-dlp');
 const ytdlpCmd = fs.existsSync(localBinaryPath) ? localBinaryPath : 'yt-dlp';
 
-// ENDPOINT 1: Video Info Processing
+// ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
 app.post('/api/info', (req, res) => {
-    let { url } = req.body;
+    const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
-    url = url.trim().replace(/,$/, '');
-
+    // Fetches title, filesize, and filesize_approx in one fast operation
     const infoProcess = spawn(ytdlpCmd, [
         '--print', 'title', 
         '--print', 'filesize,filesize_approx', 
@@ -41,13 +34,6 @@ app.post('/api/info', (req, res) => {
     let stdoutData = '';
     infoProcess.stdout.on('data', (data) => { stdoutData += data.toString(); });
 
-    infoProcess.on('error', (err) => {
-        console.error('[Engine Spawn Error]:', err);
-        if (!res.headersSent) {
-            return res.status(500).json({ error: 'Failed to communicate with download engine.' });
-        }
-    });
-
     infoProcess.on('close', (code) => {
         let titleText = 'VeloFetch_Media';
         let sizeText = 'Calculating size...';
@@ -55,12 +41,13 @@ app.post('/api/info', (req, res) => {
         if (code === 0 && stdoutData.trim()) {
             const lines = stdoutData.trim().split('\n');
             
-            // Fixed: Explicitly look at index 0 and index 1 strings inside the array
-            if (lines && lines[0]) {
+            // Extract title line safely
+            if (lines[0]) {
                 titleText = lines[0].trim();
             }
 
-            if (lines && lines[1]) {
+            // Extract size line safely
+            if (lines[1]) {
                 const sizes = lines[1].trim().split(/[\s,]+/);
                 const sizeInBytes = parseInt(sizes[0]) || parseInt(sizes[1]) || 0;
                 
@@ -70,8 +57,6 @@ app.post('/api/info', (req, res) => {
                     sizeText = `${(sizeInBytes / 1048576).toFixed(1)} MB`;
                 }
             }
-        } else {
-            return res.status(400).json({ error: 'Could not fetch video info. Link may be private or invalid.' });
         }
 
         return res.json({ videoTitle: titleText, sizeText: sizeText });
@@ -80,20 +65,21 @@ app.post('/api/info', (req, res) => {
 
 // ENDPOINT 2: UNIVERSAL HIGH-STABILITY DIRECT PIPE ENGINE
 app.get('/api/download', (req, res) => {
-    let { url, downloadType, title } = req.query; 
+    const { url, downloadType, title } = req.query; // ⚡ FIXED: Client passes extracted title directly
     if (!url) return res.status(400).json({ error: 'Please provide a valid URL' });
 
-    url = url.trim().replace(/,$/, '');
     const type = downloadType || 'video';
     
     req.setTimeout(0);
     res.setTimeout(0); 
 
+    // Sanitize the text string to keep it mobile filesystem safe
     let cleanTitle = 'VeloFetch_Media';
     if (title) {
         cleanTitle = title.replace(/[^a-zA-Z0-9 \-_]/g, '').replace(/\s+/g, '_');
     }
 
+    // Set high-compatibility media streaming headers with the dynamic filename
     if (type === 'audio') {
         res.setHeader('Content-Type', 'audio/m4a');
         res.setHeader('Content-Disposition', `attachment; filename="${cleanTitle}.m4a"`);
@@ -101,8 +87,6 @@ app.get('/api/download', (req, res) => {
         res.setHeader('Content-Type', 'video/mp4');
         res.setHeader('Content-Disposition', `attachment; filename="${cleanTitle}.mp4"`);
     }
-
-    res.setHeader('X-Accel-Buffering', 'no');
 
     let args = [
         '--http-chunk-size', '10M',       
@@ -122,11 +106,11 @@ app.get('/api/download', (req, res) => {
     console.log(`[VeloFetch Engine] Active direct parallel-pipe starting via: ${ytdlpCmd}`);
     const ytDlpProcess = spawn(ytdlpCmd, args);
 
-    ytDlpProcess.on('error', (err) => {
-        console.error('[Fatal Engine Download Error]:', err);
-    });
-
     ytDlpProcess.stdout.pipe(res);
+
+    ytDlpProcess.stderr.on('data', (data) => {
+        console.error(`[Engine Error log]: ${data.toString().trim()}`);
+    });
 
     res.on('close', () => {
         if (!ytDlpProcess.killed) {
@@ -139,12 +123,8 @@ app.get('/api/download', (req, res) => {
     });
 });
 
-// Wildcard route to handle React Router or static asset delivery safely
 app.use((req, res) => {
-    const indexPath = fs.existsSync(path.join(staticPath, 'index.html'))
-        ? path.join(staticPath, 'index.html')
-        : path.join(__dirname, 'public', 'index.html');
-    res.sendFile(indexPath);
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 const PORT = process.env.PORT || 5000;
