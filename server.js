@@ -23,7 +23,7 @@ app.post('/api/info', (req, res) => {
     let { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
-    // ⚡ FIX: Clean the URL by removing accidental spaces and trailing commas from mobile inputs
+    // Automatically strips off accidental commas or white spaces from mobile inputs
     url = url.trim().replace(/,$/, '');
 
     // Fetches title, filesize, and filesize_approx in one fast operation
@@ -37,7 +37,6 @@ app.post('/api/info', (req, res) => {
     let stdoutData = '';
     infoProcess.stdout.on('data', (data) => { stdoutData += data.toString(); });
 
-    // ⚡ FIX: Add safety handler if the spawn itself encounters an error
     infoProcess.on('error', (err) => {
         console.error('[Engine Spawn Error]:', err);
         if (!res.headersSent) {
@@ -52,12 +51,11 @@ app.post('/api/info', (req, res) => {
         if (code === 0 && stdoutData.trim()) {
             const lines = stdoutData.trim().split('\n');
             
-            // Extract title line safely
+            // Fixed: Safely check individual lines inside the array to prevent crashes
             if (lines[0]) {
                 titleText = lines[0].trim();
             }
 
-            // Extract size line safely
             if (lines[1]) {
                 const sizes = lines[1].trim().split(/[\s,]+/);
                 const sizeInBytes = parseInt(sizes[0]) || parseInt(sizes[1]) || 0;
@@ -69,7 +67,6 @@ app.post('/api/info', (req, res) => {
                 }
             }
         } else {
-            // If yt-dlp returns an error code, send a clear message instead of getting stuck
             return res.status(400).json({ error: 'Could not fetch video info. Make sure the link is valid and public.' });
         }
 
@@ -82,7 +79,7 @@ app.get('/api/download', (req, res) => {
     let { url, downloadType, title } = req.query; 
     if (!url) return res.status(400).json({ error: 'Please provide a valid URL' });
 
-    // ⚡ FIX: Clean the URL for the streaming download step too
+    // Cleans up the download parameters too
     url = url.trim().replace(/,$/, '');
 
     const type = downloadType || 'video';
@@ -105,7 +102,6 @@ app.get('/api/download', (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${cleanTitle}.mp4"`);
     }
 
-    // ⚡ FIX: Disable proxy buffering for cloud hosting platforms to ensure stable data flow
     res.setHeader('X-Accel-Buffering', 'no');
 
     let args = [
@@ -126,7 +122,6 @@ app.get('/api/download', (req, res) => {
     console.log(`[VeloFetch Engine] Active direct parallel-pipe starting via: ${ytdlpCmd}`);
     const ytDlpProcess = spawn(ytdlpCmd, args);
 
-    // ⚡ FIX: Prevent server crashes if yt-dlp pipeline runs into an extraction issue mid-stream
     ytDlpProcess.on('error', (err) => {
         console.error('[Fatal Engine Download Error]:', err);
     });
