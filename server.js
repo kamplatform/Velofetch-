@@ -20,8 +20,11 @@ const ytdlpCmd = fs.existsSync(localBinaryPath) ? localBinaryPath : 'yt-dlp';
 
 // ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
 app.post('/api/info', (req, res) => {
-    const { url } = req.body;
+    let { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
+
+    // ⚡ FIX: Clean the URL by removing accidental spaces and trailing commas from mobile inputs
+    url = url.trim().replace(/,$/, '');
 
     // Fetches title, filesize, and filesize_approx in one fast operation
     const infoProcess = spawn(ytdlpCmd, [
@@ -33,6 +36,14 @@ app.post('/api/info', (req, res) => {
     
     let stdoutData = '';
     infoProcess.stdout.on('data', (data) => { stdoutData += data.toString(); });
+
+    // ⚡ FIX: Add safety handler if the spawn itself encounters an error
+    infoProcess.on('error', (err) => {
+        console.error('[Engine Spawn Error]:', err);
+        if (!res.headersSent) {
+            return res.status(500).json({ error: 'Failed to communicate with download engine.' });
+        }
+    });
 
     infoProcess.on('close', (code) => {
         let titleText = 'VeloFetch_Media';
@@ -57,6 +68,9 @@ app.post('/api/info', (req, res) => {
                     sizeText = `${(sizeInBytes / 1048576).toFixed(1)} MB`;
                 }
             }
+        } else {
+            // If yt-dlp returns an error code, send a clear message instead of getting stuck
+            return res.status(400).json({ error: 'Could not fetch video info. Make sure the link is valid and public.' });
         }
 
         return res.json({ videoTitle: titleText, sizeText: sizeText });
@@ -65,8 +79,11 @@ app.post('/api/info', (req, res) => {
 
 // ENDPOINT 2: UNIVERSAL HIGH-STABILITY DIRECT PIPE ENGINE
 app.get('/api/download', (req, res) => {
-    const { url, downloadType, title } = req.query; // ⚡ FIXED: Client passes extracted title directly
+    let { url, downloadType, title } = req.query; 
     if (!url) return res.status(400).json({ error: 'Please provide a valid URL' });
+
+    // ⚡ FIX: Clean the URL for the streaming download step too
+    url = url.trim().replace(/,$/, '');
 
     const type = downloadType || 'video';
     
@@ -88,6 +105,9 @@ app.get('/api/download', (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${cleanTitle}.mp4"`);
     }
 
+    // ⚡ FIX: Disable proxy buffering for cloud hosting platforms to ensure stable data flow
+    res.setHeader('X-Accel-Buffering', 'no');
+
     let args = [
         '--http-chunk-size', '10M',       
         '--concurrent-fragments', '4',    
@@ -105,6 +125,11 @@ app.get('/api/download', (req, res) => {
 
     console.log(`[VeloFetch Engine] Active direct parallel-pipe starting via: ${ytdlpCmd}`);
     const ytDlpProcess = spawn(ytdlpCmd, args);
+
+    // ⚡ FIX: Prevent server crashes if yt-dlp pipeline runs into an extraction issue mid-stream
+    ytDlpProcess.on('error', (err) => {
+        console.error('[Fatal Engine Download Error]:', err);
+    });
 
     ytDlpProcess.stdout.pipe(res);
 
@@ -131,4 +156,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`VeloFetch Server running dynamically on port ${PORT}`);
 });
-
