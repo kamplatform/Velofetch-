@@ -4,6 +4,7 @@ import path from 'path';
 import { spawn } from 'child_process'; 
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import YTDlpWrap from 'yt-dlp-wrap';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,15 +16,33 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Automated background setup for cloud platforms
 const localBinaryPath = path.join(__dirname, 'bin', 'yt-dlp');
-const ytdlpCmd = fs.existsSync(localBinaryPath) ? localBinaryPath : 'yt-dlp';
+let ytdlpCmd = fs.existsSync(localBinaryPath) ? localBinaryPath : 'yt-dlp';
+
+const downloadBinary = async () => {
+    if (!fs.existsSync(localBinaryPath)) {
+        console.log('[VeloFetch Pro] Cloud detected. Initializing binary auto-download...');
+        if (!fs.existsSync(path.join(__dirname, 'bin'))) {
+            fs.mkdirSync(path.join(__dirname, 'bin'));
+        }
+        try {
+            await YTDlpWrap.default.downloadFromGithub(localBinaryPath);
+            fs.chmodSync(localBinaryPath, '755');
+            ytdlpCmd = localBinaryPath;
+            console.log('[VeloFetch Pro] Cloud binary setup successful!');
+        } catch (err) {
+            console.error('[VeloFetch Pro] Fallback active:', err.message);
+        }
+    }
+};
+await downloadBinary();
 
 // ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
 app.post('/api/info', (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
-    // Fetches title, filesize, and filesize_approx in one fast operation
     const infoProcess = spawn(ytdlpCmd, [
         '--print', 'title', 
         '--print', 'filesize,filesize_approx', 
@@ -40,17 +59,12 @@ app.post('/api/info', (req, res) => {
 
         if (code === 0 && stdoutData.trim()) {
             const lines = stdoutData.trim().split('\n');
-            
-            // Extract title line safely from the first row of output
             if (lines[0] && lines[0].trim() !== '') {
                 titleText = lines[0].trim();
             }
-
-            // Extract size line safely from the second row of output
             if (lines[1]) {
                 const sizes = lines[1].trim().split(/[\s,]+/);
                 const sizeInBytes = parseInt(sizes[0]) || parseInt(sizes[1]) || 0;
-                
                 if (sizeInBytes >= 1073741824) {
                     sizeText = `${(sizeInBytes / 1073741824).toFixed(2)} GB`;
                 } else if (sizeInBytes > 0) {
@@ -58,7 +72,6 @@ app.post('/api/info', (req, res) => {
                 }
             }
         }
-
         return res.json({ videoTitle: titleText, sizeText: sizeText });
     });
 });
@@ -69,39 +82,26 @@ app.get('/api/download', (req, res) => {
     if (!url) return res.status(400).json({ error: 'Please provide a valid URL' });
 
     const type = downloadType || 'video';
-    
     req.setTimeout(0);
     res.setTimeout(0); 
 
-    // Clean and sanitize the incoming text securely
     let cleanTitle = 'VeloFetch_Media';
     if (title && title !== 'undefined' && title.trim() !== '') {
-        cleanTitle = decodeURIComponent(title)
-            .replace(/[^a-zA-Z0-9\-_ ]/g, '') // Scrub out symbols except spaces, hyphens, and underscores
-            .replace(/\s+/g, '_');            // Convert remaining spaces to clean underscores
+        cleanTitle = decodeURIComponent(title).replace(/[^a-zA-Z0-9\-_ ]/g, '').replace(/\s+/g, '_');
     }
 
-    // Fallback security if cleaning leaves the name completely blank
     if (!cleanTitle || cleanTitle.trim() === '') {
         cleanTitle = `VeloFetch_${Date.now()}`;
     }
 
-    // Create an encoded URL version for secure browser handling
     const encodedTitle = encodeURIComponent(cleanTitle);
 
-    // Push dual-filename configurations to pass modern browser validation checks
     if (type === 'audio') {
         res.setHeader('Content-Type', 'audio/mp4');
-        res.setHeader(
-            'Content-Disposition', 
-            `attachment; filename="${cleanTitle}.m4a"; filename*=UTF-8''${encodedTitle}.m4a`
-        );
+        res.setHeader('Content-Disposition', `attachment; filename="${cleanTitle}.m4a"; filename*=UTF-8''${encodedTitle}.m4a`);
     } else {
         res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader(
-            'Content-Disposition', 
-            `attachment; filename="${cleanTitle}.mp4"; filename*=UTF-8''${encodedTitle}.mp4`
-        );
+        res.setHeader('Content-Disposition', `attachment; filename="${cleanTitle}.mp4"; filename*=UTF-8''${encodedTitle}.mp4`);
     }
 
     let args = [
@@ -119,14 +119,8 @@ app.get('/api/download', (req, res) => {
     
     args.push('-o', '-', url);
 
-    console.log(`[VeloFetch Engine] Active direct parallel-pipe starting via: ${ytdlpCmd}`);
     const ytDlpProcess = spawn(ytdlpCmd, args);
-
     ytDlpProcess.stdout.pipe(res);
-
-    ytDlpProcess.stderr.on('data', (data) => {
-        console.error(`[Engine Error log]: ${data.toString().trim()}`);
-    });
 
     res.on('close', () => {
         if (!ytDlpProcess.killed) {
@@ -134,7 +128,7 @@ app.get('/api/download', (req, res) => {
         }
     });
 
-    ytDlpProcess.on('close', (code) => {
+    ytDlpProcess.on('close', () => {
         res.end();
     });
 });
