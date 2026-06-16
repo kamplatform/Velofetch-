@@ -16,31 +16,33 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Automated background setup for cloud platforms
+// Set paths for the yt-dlp binary installer
 const localBinaryPath = path.join(__dirname, 'bin', 'yt-dlp');
 let ytdlpCmd = fs.existsSync(localBinaryPath) ? localBinaryPath : 'yt-dlp';
 
-// ⚡ FIX: Safely wrapped inside an isolated shell function to prevent the cloud engine from exiting early
-const initializeBinary = () => {
+// ⚡ FIXED: Cleaned up the module syntax to prevent background installer crashes
+const initializeBinary = async () => {
     if (!fs.existsSync(localBinaryPath)) {
-        console.log('[VeloFetch Pro] Cloud environment detected. Initializing binary download...');
+        console.log('[VeloFetch Pro] Configuring container binaries...');
         if (!fs.existsSync(path.join(__dirname, 'bin'))) {
             fs.mkdirSync(path.join(__dirname, 'bin'));
         }
         
-        // Fetch the file system assets asynchronously safely
-        YTDlpWrap.default.downloadFromGithub(localBinaryPath)
-            .then(() => {
-                fs.chmodSync(localBinaryPath, '755');
-                ytdlpCmd = localBinaryPath;
-                console.log('[VeloFetch Pro] Cloud binary installation completed successfully!');
-            })
-            .catch((err) => {
-                console.error('[VeloFetch Pro] Binary download fallback notice:', err.message);
-            });
+        try {
+            // Correct module constructor retrieval rule for cloud node engines
+            const downloader = YTDlpWrap.default || YTDlpWrap;
+            await downloader.downloadFromGithub(localBinaryPath);
+            fs.chmodSync(localBinaryPath, '755');
+            ytdlpCmd = localBinaryPath;
+            console.log('[VeloFetch Pro] System setup completed successfully!');
+        } catch (err) {
+            console.error('[VeloFetch Pro] System notice:', err.message);
+            // Default to system global path if download fails
+            ytdlpCmd = 'yt-dlp';
+        }
     }
 };
-initializeBinary();
+await initializeBinary();
 
 // ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
 app.post('/api/info', (req, res) => {
@@ -63,7 +65,7 @@ app.post('/api/info', (req, res) => {
 
         if (code === 0 && stdoutData.trim()) {
             const lines = stdoutData.trim().split('\n');
-            if (lines[0] && lines[0].trim() !== '') {
+            if (lines[0]) {
                 titleText = lines[0].trim();
             }
             if (lines[1]) {
