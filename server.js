@@ -14,7 +14,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ⚡ FIX: Use the native system command installed via Dockerfile directly
+// Use the native system command installed via Dockerfile directly
 const ytdlpCmd = 'yt-dlp';
 
 // ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
@@ -22,6 +22,7 @@ app.post('/api/info', (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
+    // Fetches title, filesize, and filesize_approx in one fast operation
     const infoProcess = spawn(ytdlpCmd, [
         '--print', 'title', 
         '--print', 'filesize,filesize_approx', 
@@ -34,16 +35,21 @@ app.post('/api/info', (req, res) => {
 
     infoProcess.on('close', (code) => {
         let titleText = 'VeloFetch_Media';
-        let sizeText = 'Calculating size...';
+        let sizeText = 'Unknown size';
 
         if (code === 0 && stdoutData.trim()) {
             const lines = stdoutData.trim().split('\n');
-            if (lines[0]) {
+            
+            // ⚡ FIXED: Properly extract the title string from the array index
+            if (lines[0] && lines[0].trim() !== '') {
                 titleText = lines[0].trim();
             }
+
+            // ⚡ FIXED: Properly extract and parse size lines from the array index
             if (lines[1]) {
                 const sizes = lines[1].trim().split(/[\s,]+/);
                 const sizeInBytes = parseInt(sizes[0]) || parseInt(sizes[1]) || 0;
+                
                 if (sizeInBytes >= 1073741824) {
                     sizeText = `${(sizeInBytes / 1073741824).toFixed(2)} GB`;
                 } else if (sizeInBytes > 0) {
