@@ -20,23 +20,27 @@ app.use(express.static(path.join(__dirname, 'public')));
 const localBinaryPath = path.join(__dirname, 'bin', 'yt-dlp');
 let ytdlpCmd = fs.existsSync(localBinaryPath) ? localBinaryPath : 'yt-dlp';
 
-const downloadBinary = async () => {
+// ⚡ FIX: Safely wrapped inside an isolated shell function to prevent the cloud engine from exiting early
+const initializeBinary = () => {
     if (!fs.existsSync(localBinaryPath)) {
-        console.log('[VeloFetch Pro] Cloud detected. Initializing binary auto-download...');
+        console.log('[VeloFetch Pro] Cloud environment detected. Initializing binary download...');
         if (!fs.existsSync(path.join(__dirname, 'bin'))) {
             fs.mkdirSync(path.join(__dirname, 'bin'));
         }
-        try {
-            await YTDlpWrap.default.downloadFromGithub(localBinaryPath);
-            fs.chmodSync(localBinaryPath, '755');
-            ytdlpCmd = localBinaryPath;
-            console.log('[VeloFetch Pro] Cloud binary setup successful!');
-        } catch (err) {
-            console.error('[VeloFetch Pro] Fallback active:', err.message);
-        }
+        
+        // Fetch the file system assets asynchronously safely
+        YTDlpWrap.default.downloadFromGithub(localBinaryPath)
+            .then(() => {
+                fs.chmodSync(localBinaryPath, '755');
+                ytdlpCmd = localBinaryPath;
+                console.log('[VeloFetch Pro] Cloud binary installation completed successfully!');
+            })
+            .catch((err) => {
+                console.error('[VeloFetch Pro] Binary download fallback notice:', err.message);
+            });
     }
 };
-await downloadBinary();
+initializeBinary();
 
 // ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
 app.post('/api/info', (req, res) => {
