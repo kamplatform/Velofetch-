@@ -14,19 +14,18 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Use the native system command installed via Dockerfile directly
 const ytdlpCmd = 'yt-dlp';
 
-// ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
+// ENDPOINT 1: Video Info Processing
 app.post('/api/info', (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
-    // Fetches title, filesize, and filesize_approx in one fast operation
+    // ⚡ FIXED: Simplified format flags (-f best) so it never crashes on any link
     const infoProcess = spawn(ytdlpCmd, [
         '--print', 'title', 
         '--print', 'filesize,filesize_approx', 
-        '-f', 'bv*[vcodec^=avc]+ba[ext=m4a]/b[vcodec^=avc]', 
+        '-f', 'bestvideo+bestaudio/best', 
         url
     ]);
     
@@ -40,12 +39,10 @@ app.post('/api/info', (req, res) => {
         if (code === 0 && stdoutData.trim()) {
             const lines = stdoutData.trim().split('\n');
             
-            // ⚡ FIXED: Properly extract the title string from the array index
             if (lines[0] && lines[0].trim() !== '') {
                 titleText = lines[0].trim();
             }
 
-            // ⚡ FIXED: Properly extract and parse size lines from the array index
             if (lines[1]) {
                 const sizes = lines[1].trim().split(/[\s,]+/);
                 const sizeInBytes = parseInt(sizes[0]) || parseInt(sizes[1]) || 0;
@@ -61,7 +58,7 @@ app.post('/api/info', (req, res) => {
     });
 });
 
-// ENDPOINT 2: UNIVERSAL HIGH-STABILITY DIRECT PIPE ENGINE
+// ENDPOINT 2: UNIVERSAL DIRECT PIPE ENGINE
 app.get('/api/download', (req, res) => {
     const { url, downloadType, title } = req.query; 
     if (!url) return res.status(400).json({ error: 'Please provide a valid URL' });
@@ -96,10 +93,11 @@ app.get('/api/download', (req, res) => {
         '-q', '--no-warnings'             
     ];
 
+    // ⚡ FIXED: Streamlines standard audio/video arguments safely
     if (type === 'audio') {
-        args.push('-f', 'ba[ext=m4a]/ba');
+        args.push('-f', 'bestaudio/ba');
     } else {
-        args.push('-f', 'bv*[vcodec^=avc]+ba[ext=m4a]/b[vcodec^=avc]/b'); 
+        args.push('-f', 'bestvideo+bestaudio/best'); 
     }
     
     args.push('-o', '-', url);
@@ -126,3 +124,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`VeloFetch Server running dynamically on port ${PORT}`);
 });
+
