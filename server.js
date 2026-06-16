@@ -14,6 +14,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Target the global system package path provided by Railway's environment
 const ytdlpCmd = 'yt-dlp';
 
 // ENDPOINT 1: Video Info Processing
@@ -21,7 +22,7 @@ app.post('/api/info', (req, res) => {
     const { url } = req.body;
     if (!url) return res.status(400).json({ error: 'No URL provided' });
 
-    // ⚡ FIXED: Simplified format flags (-f best) so it never crashes on any link
+    // Streamlined format search configuration
     const infoProcess = spawn(ytdlpCmd, [
         '--print', 'title', 
         '--print', 'filesize,filesize_approx', 
@@ -58,7 +59,7 @@ app.post('/api/info', (req, res) => {
     });
 });
 
-// ENDPOINT 2: UNIVERSAL DIRECT PIPE ENGINE
+// ENDPOINT 2: UNIVERSAL PARALLEL-PIPE STREAM ENGINE
 app.get('/api/download', (req, res) => {
     const { url, downloadType, title } = req.query; 
     if (!url) return res.status(400).json({ error: 'Please provide a valid URL' });
@@ -93,7 +94,6 @@ app.get('/api/download', (req, res) => {
         '-q', '--no-warnings'             
     ];
 
-    // ⚡ FIXED: Streamlines standard audio/video arguments safely
     if (type === 'audio') {
         args.push('-f', 'bestaudio/ba');
     } else {
@@ -124,4 +124,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`VeloFetch Server running dynamically on port ${PORT}`);
 });
+
 
