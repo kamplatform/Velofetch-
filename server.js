@@ -3,8 +3,6 @@ import cors from 'cors';
 import path from 'path';
 import { spawn } from 'child_process'; 
 import { fileURLToPath } from 'url';
-import fs from 'fs';
-import YTDlpWrap from 'yt-dlp-wrap';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,33 +14,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Set paths for the yt-dlp binary installer
-const localBinaryPath = path.join(__dirname, 'bin', 'yt-dlp');
-let ytdlpCmd = fs.existsSync(localBinaryPath) ? localBinaryPath : 'yt-dlp';
-
-// ⚡ FIXED: Cleaned up the module syntax to prevent background installer crashes
-const initializeBinary = async () => {
-    if (!fs.existsSync(localBinaryPath)) {
-        console.log('[VeloFetch Pro] Configuring container binaries...');
-        if (!fs.existsSync(path.join(__dirname, 'bin'))) {
-            fs.mkdirSync(path.join(__dirname, 'bin'));
-        }
-        
-        try {
-            // Correct module constructor retrieval rule for cloud node engines
-            const downloader = YTDlpWrap.default || YTDlpWrap;
-            await downloader.downloadFromGithub(localBinaryPath);
-            fs.chmodSync(localBinaryPath, '755');
-            ytdlpCmd = localBinaryPath;
-            console.log('[VeloFetch Pro] System setup completed successfully!');
-        } catch (err) {
-            console.error('[VeloFetch Pro] System notice:', err.message);
-            // Default to system global path if download fails
-            ytdlpCmd = 'yt-dlp';
-        }
-    }
-};
-await initializeBinary();
+// ⚡ FIX: Use the native system command installed via Dockerfile directly
+const ytdlpCmd = 'yt-dlp';
 
 // ENDPOINT 1: Video Info Processing (Fetches Title & Size Simultaneously)
 app.post('/api/info', (req, res) => {
